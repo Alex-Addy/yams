@@ -10,17 +10,25 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use rocket::response::content::Content;
+use rocket::response::Redirect;
 use rocket::http::ContentType;
+
+#[get("/")]
+fn root() -> Redirect {
+    Redirect::to("/index.html")
+}
 
 #[get("/<path..>")]
 fn pages(path: PathBuf) -> io::Result<Content<String>> {
-    let full_path = Path::new(SITE_ROOT).join(path.with_extension("md"));
+    let full_path = Path::new(SITE_ROOT).join(path);
+    let ext = full_path.extension();
 
-    if let Some(ext) = path.extension() {
+    if let Some(ext) = ext {
         if ext == "html" {
+            let full_path = full_path.with_extension("md");
             let rendered = get_md_as_html(&full_path)?;
             // eww, there has to be a better way to handle this
-            let title = path.file_stem().map_or("thread.run", |s| s.to_str().unwrap());
+            let title = full_path.file_stem().map_or("thread.run", |s| s.to_str().unwrap());
             let generated = pretend_template(title, &rendered);
             return Ok(Content(ContentType::HTML, generated));
         }
@@ -29,7 +37,7 @@ fn pages(path: PathBuf) -> io::Result<Content<String>> {
     let mut contents = String::new();
     File::open(&full_path)?.read_to_string(&mut contents)?;
 
-    let content_type = match path.extension().map_or(None, |s| s.to_str()) {
+    let content_type = match ext.map_or(None, |s| s.to_str()) {
         // TODO handle images
         Some("css") => ContentType::CSS,
         // TODO load unknown files to a binary container so the default
@@ -41,7 +49,7 @@ fn pages(path: PathBuf) -> io::Result<Content<String>> {
 }
 
 fn rocket() -> rocket::Rocket {
-    rocket::ignite().mount("/", routes![pages])
+    rocket::ignite().mount("/", routes![root, pages])
 }
 
 fn main() {
@@ -58,7 +66,6 @@ fn get_md_as_html(path: &Path) -> io::Result<String> {
     Ok(markdown_to_html(&contents, &ComrakOptions::default()))
 }
 
-
 fn pretend_template(title: &str, content: &str) -> String {
     // I would rather this be in a constant but format! requires a string literal?
     // TODO fix this
@@ -67,6 +74,7 @@ fn pretend_template(title: &str, content: &str) -> String {
 <head>
     <title>{title}</title>
     <meta charset="UTF-8">
+    <link rel="stylesheet" type="text/css" href="/css/base.css">
 </head>
 <body>
     {body}
