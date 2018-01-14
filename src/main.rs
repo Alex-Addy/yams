@@ -8,10 +8,12 @@ use std::fs::File;
 use std::io;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::env;
 
 use rocket::response::content::Content;
 use rocket::response::Redirect;
 use rocket::http::ContentType;
+use rocket::State;
 
 #[get("/")]
 fn root() -> Redirect {
@@ -19,8 +21,8 @@ fn root() -> Redirect {
 }
 
 #[get("/<path..>")]
-fn pages(path: PathBuf) -> io::Result<Content<String>> {
-    let full_path = Path::new(SITE_ROOT).join(path);
+fn pages(path: PathBuf, site_root: State<PathBuf>) -> io::Result<Content<String>> {
+    let full_path = site_root.join(path);
     let ext = full_path.extension();
 
     if let Some(ext) = ext {
@@ -48,15 +50,21 @@ fn pages(path: PathBuf) -> io::Result<Content<String>> {
     Ok(Content(content_type, contents))
 }
 
-fn rocket() -> rocket::Rocket {
-    rocket::ignite().mount("/", routes![root, pages])
+fn rocket(site_root: PathBuf) -> rocket::Rocket {
+    rocket::ignite()
+        .manage(site_root)
+        .mount("/", routes![root, pages])
 }
 
 fn main() {
-    rocket().launch();
+    let args: Vec<String> = env::args().collect();
+    if args.len() != 2 {
+        println!("Usage: {} <site_root>", args[0]);
+        drop(args);
+        std::process::exit(1);
+    }
+    rocket(PathBuf::from(&args[1])).launch();
 }
-
-const SITE_ROOT: &'static str = "../thread.run/";
 
 use comrak::{markdown_to_html, ComrakOptions};
 fn get_md_as_html(path: &Path) -> io::Result<String> {
