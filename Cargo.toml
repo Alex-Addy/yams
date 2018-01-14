@@ -4,8 +4,8 @@ version = "0.1.0"
 authors = ["Alex Addy <alex.addy@gmail.com>"]
 
 [dependencies]
-rocket = "0.3.5"
-rocket_codegen = "0.3.5"
+rocket = "0.3.6"
+rocket_codegen = "0.3.6"
 
 comrak = "0.2.5"
 
