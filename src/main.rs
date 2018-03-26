@@ -3,6 +3,8 @@
 
 extern crate rocket;
 extern crate comrak;
+extern crate git2;
+extern crate json;
 
 use std::fs::File;
 use std::io;
@@ -50,10 +52,20 @@ fn pages(path: PathBuf, site_root: State<PathBuf>) -> io::Result<Content<String>
     Ok(Content(content_type, contents))
 }
 
+mod git;
+
+#[post("/webhooks/github", format = "application/json")]
+fn git_webhook(site_root: State<PathBuf>) {
+    let head = git::get_head_sha(&site_root).expect("couldn't get HEAD sha");
+    println!("{}", head);
+    // TODO check hash against content
+    git::pull(&site_root).unwrap();
+}
+
 fn rocket(site_root: PathBuf) -> rocket::Rocket {
     rocket::ignite()
         .manage(site_root)
-        .mount("/", routes![root, pages])
+        .mount("/", routes![root, pages, git_webhook])
 }
 
 fn main() {
