@@ -1,7 +1,7 @@
 
 use std::path::Path;
 
-use git2::{Repository, Error, RepositoryState, MergeAnalysis};
+use git2::{self, Repository, Error, RepositoryState, MergeAnalysis};
 use git2::{FetchOptions, RemoteCallbacks, CredentialType, Cred};
 
 pub fn get_head_sha(path: &Path) -> Result<String, Error> {
@@ -30,7 +30,8 @@ pub fn pull(path: &Path, ssh: &SSHConf) -> Result<(), Error> {
     opts.remote_callbacks(callbacks);
 
     // fetch new commits
-    repo.find_remote("origin")?.fetch(&["master"], Some(&mut opts), None)?;
+    repo.find_remote("origin")?
+        .fetch(/* empty results in updating all refspecs */ &[], Some(&mut opts), None)?;
 
     // get commit for remote master
     let oid = repo.revparse_single("origin/master^{commit}")?.id();
@@ -44,7 +45,12 @@ pub fn pull(path: &Path, ssh: &SSHConf) -> Result<(), Error> {
         return Err(Error::from_str(&format!("cannot continue with merge, fastforward not possible, analysis is {:?}", analysis)));
     }
 
-    repo.merge(&[&r_head], None, None)?;
+    let mut master = repo.find_branch("master", git2::BranchType::Local)?.into_reference();
+    master.set_target(oid, "Update local branch master to match remote master")?;
+    // HEAD and master now point to the correct location and the files are in the correct
+    // state, however all the changes are also in the index
+    // HACK if we clear the index then everything seems to be correct so lets just do that
+    repo.reset(&repo.revparse_single("HEAD")?, git2::ResetType::Hard, None)?;
 
     Ok(())
 }
