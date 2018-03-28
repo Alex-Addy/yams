@@ -6,6 +6,10 @@ extern crate comrak;
 extern crate git2;
 extern crate json;
 
+mod git;
+mod conf;
+use conf::Config;
+
 use std::fs::File;
 use std::io;
 use std::io::Read;
@@ -16,6 +20,11 @@ use rocket::response::content::Content;
 use rocket::response::Redirect;
 use rocket::http::ContentType;
 use rocket::State;
+use rocket::fairing::AdHoc;
+
+//
+// Routes
+//
 
 #[get("/")]
 fn root() -> Redirect {
@@ -23,8 +32,8 @@ fn root() -> Redirect {
 }
 
 #[get("/<path..>")]
-fn pages(path: PathBuf, site_root: State<PathBuf>) -> io::Result<Content<String>> {
-    let full_path = site_root.join(path);
+fn pages(path: PathBuf, conf: State<Config>) -> io::Result<Content<String>> {
+    let full_path = conf.site_root.join(path);
     let ext = full_path.extension();
 
     if let Some(ext) = ext {
@@ -52,30 +61,12 @@ fn pages(path: PathBuf, site_root: State<PathBuf>) -> io::Result<Content<String>
     Ok(Content(content_type, contents))
 }
 
-mod git;
-
 #[post("/webhooks/github", format = "application/json")]
-fn git_webhook(site_root: State<PathBuf>) {
-    let head = git::get_head_sha(&site_root).expect("couldn't get HEAD sha");
+fn git_webhook(conf: State<Config>) {
+    let head = git::get_head_sha(&conf.site_root).expect("couldn't get HEAD sha");
     println!("{}", head);
     // TODO check hash against content
-    git::pull(&site_root).unwrap();
-}
-
-fn rocket(site_root: PathBuf) -> rocket::Rocket {
-    rocket::ignite()
-        .manage(site_root)
-        .mount("/", routes![root, pages, git_webhook])
-}
-
-fn main() {
-    let args: Vec<String> = env::args().collect();
-    if args.len() != 2 {
-        println!("Usage: {} <site_root>", args[0]);
-        drop(args);
-        std::process::exit(1);
-    }
-    rocket(PathBuf::from(&args[1])).launch();
+    git::pull(&conf.site_root, &conf.ssh).unwrap();
 }
 
 use comrak::{markdown_to_html, ComrakOptions};
@@ -102,3 +93,35 @@ fn pretend_template(title: &str, content: &str) -> String {
 "#, title = title, body = content)
 }
 
+
+//
+// Main Section
+//
+
+fn rocket() -> rocket::Rocket {
+    rocket::ignite()
+        .attach(AdHoc::on_attach(|rocket| {
+            let conf = conf::Config::from_rocket_conf(rocket.config());
+            match conf {
+                Ok(c) => {
+                    println!("Extracted config: {:?}", c);
+                    Ok(rocket.manage(c))
+                },
+                Err(e) => {
+                    println!("Error extracing config: {:?}", e);
+                    Err(rocket)
+                },
+            }
+        }))
+        .mount("/", routes![root, pages, git_webhook])
+}
+
+fn main() {
+    let args: Vec<String> = env::args().collect();
+    if args.len() != 1 {
+        println!("Usage: {}", args[0]);
+        drop(args);
+        std::process::exit(1);
+    }
+    rocket().launch();
+}

@@ -4,6 +4,8 @@ use std::path::Path;
 use git2::{self, Repository, Error, RepositoryState, MergeAnalysis};
 use git2::{FetchOptions, RemoteCallbacks, CredentialType, Cred};
 
+use conf;
+
 pub fn get_head_sha(path: &Path) -> Result<String, Error> {
     let repo = Repository::open(path)?;
     let obj = repo.revparse_single("HEAD^{commit}")?;
@@ -14,7 +16,7 @@ pub fn get_head_sha(path: &Path) -> Result<String, Error> {
 
 // update origin and merge HEAD onto master
 // will only perform fast forward merges on a clean repo
-pub fn pull(path: &Path, ssh: &SSHConf) -> Result<(), Error> {
+pub fn pull(path: &Path, ssh: &conf::SSHConf) -> Result<(), Error> {
     let repo = Repository::open(path)?;
 
     if repo.state() != RepositoryState::Clean {
@@ -55,18 +57,13 @@ pub fn pull(path: &Path, ssh: &SSHConf) -> Result<(), Error> {
     Ok(())
 }
 
-pub struct SSHConf<'a> {
-    pub username: Option<&'a str>,
-    pub public_key: &'a Path,
-    pub private_key: &'a Path,
-    pub passphrase: Option<&'a str>,
-}
-
-fn get_creds(_url: &str, username: Option<&str>, _cred_type: CredentialType, ssh: &SSHConf)
+fn get_creds(_url: &str, username: Option<&str>, _cred_type: CredentialType, ssh: &conf::SSHConf)
     -> Result<Cred, Error> {
 
+    let name_cloned = ssh.username.clone();
+    let tmp_name = name_cloned.as_ref().map(String::as_ref);
     // a provided username should override the configured username
-    let username = match (username, ssh.username) {
+    let username = match (username, tmp_name) {
         (Some(name), _) => name,
         (None, Some(name)) => name,
         (None, None) => return Err(Error::from_str("username could not be found")),
@@ -76,7 +73,7 @@ fn get_creds(_url: &str, username: Option<&str>, _cred_type: CredentialType, ssh
     // TODO add other type of credential handling in the future
     Cred::ssh_key(
         username,
-        Some(ssh.public_key),
-        ssh.private_key,
-        ssh.passphrase)
+        Some(&ssh.public_key),
+        &ssh.private_key,
+        ssh.passphrase.as_ref().map(String::as_ref))
 }
