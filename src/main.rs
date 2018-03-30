@@ -5,10 +5,14 @@ extern crate rocket;
 extern crate comrak;
 extern crate git2;
 extern crate json;
+extern crate failure;
 
 mod git;
 mod conf;
+mod github;
+
 use conf::Config;
+use github::GitHubEvent;
 
 use std::fs::File;
 use std::io;
@@ -61,13 +65,35 @@ fn pages(path: PathBuf, conf: State<Config>) -> io::Result<Content<String>> {
     Ok(Content(content_type, contents))
 }
 
-#[post("/webhooks/github", format = "application/json")]
-fn git_webhook(conf: State<Config>) {
+
+#[post("/webhooks/github", format = "application/json", data = "<event>")]
+fn git_webhook(conf: State<Config>, event: GitHubEvent) {
+    println!("{:?}", event);
+    match &*event.event_type {
+        "ping" => return,
+        "push" => {},
+        t => {
+            println!("Unknown event type '{}'", t);
+            return;
+        },
+    }
+
     let head = git::get_head_sha(&conf.site_root).expect("couldn't get HEAD sha");
-    println!("{}", head);
-    // TODO check hash against content
+    if head == event.new_sha.unwrap() {
+        println!("Head is already at {}", head);
+        return;
+    }
+    if !event.full_ref.unwrap().contains("master") {
+        println!("Push is for non-master branch, skipping");
+        return;
+    }
+
     git::pull(&conf.site_root, &conf.ssh).unwrap();
 }
+
+//
+// Utility Functions
+//
 
 use comrak::{markdown_to_html, ComrakOptions};
 fn get_md_as_html(path: &Path) -> io::Result<String> {
