@@ -14,12 +14,12 @@ experience to see what it is like to implement a web server with a few
 features that are sort of difficult to find together on other servers.
 
 Features:
- - [ ] Render Markdown to serve as html
+ - [x] Render Markdown to serve as html
  - [ ] Combine rendered html with provided css
- - [ ] Serve markdown as .html and hide the original format of pages
- - [ ] Fetch updated pages via git upon the reciept of a webhook
+ - [x] Serve markdown as .html and hide the original format of pages
+ - [x] Fetch updated pages via git upon the reciept of a webhook
 
 Caddy has almost all the above features but it serves the rendered markdown
-pages as .md and not .html, making future changes in format annoying and
-possibly causing other problems.
+pages as .md and not .html, making future changes in format annoying if
+stable links are desired.
 
