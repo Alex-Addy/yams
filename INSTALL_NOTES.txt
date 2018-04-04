@@ -1,0 +1,6 @@
+Commands to get this running on Ubuntu Digital Ocean server:
+```
+apt-get update
+apt-get install build-essential pkg-config libssl-dev cmake
+```
+
