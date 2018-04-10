@@ -4,3 +4,6 @@
 *.swp
 
 Rocket.toml
+
+# ignore file until dependency hell can be sorted out
+Cargo.lock
