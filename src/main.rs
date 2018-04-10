@@ -20,8 +20,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::env;
 
-use rocket::response::content::Content;
-use rocket::response::Redirect;
+use rocket::response::{Content, Redirect};
 use rocket::http::ContentType;
 use rocket::State;
 use rocket::fairing::AdHoc;
@@ -36,33 +35,32 @@ fn root() -> Redirect {
 }
 
 #[get("/<path..>")]
-fn pages(path: PathBuf, conf: State<Config>) -> io::Result<Content<String>> {
+fn pages(path: PathBuf, conf: State<Config>) -> Option<Content<Vec<u8>>> {
     let full_path = conf.site_root.join(path);
-    let ext = full_path.extension();
+    let ext = full_path.extension().unwrap();
+    let content_type = ContentType::from_extension(ext.to_str().expect("extension is not valid utf-8"))
+        .unwrap_or(ContentType::Binary);
 
-    if let Some(ext) = ext {
-        if ext == "html" {
-            let full_path = full_path.with_extension("md");
-            let rendered = get_md_as_html(&full_path)?;
+    // if the file exists return it directly
+    if full_path.exists() && full_path.is_file() {
+        let mut buf = Vec::new(); // none of my files are currently large enough to worry about this
+        File::open(&full_path).unwrap().read_to_end(&mut buf).unwrap();
+
+        return Some(Content(content_type, buf));
+    }
+
+    if ext == "html" {
+        let full_path = full_path.with_extension("md");
+        if full_path.exists() && full_path.is_file() {
+            let rendered = get_md_as_html(&full_path).unwrap();
             // eww, there has to be a better way to handle this
             let title = full_path.file_stem().map_or("thread.run", |s| s.to_str().unwrap());
             let generated = pretend_template(title, &rendered);
-            return Ok(Content(ContentType::HTML, generated));
+            return Some(Content(ContentType::HTML, Vec::from(generated)));
         }
     }
 
-    let mut contents = String::new();
-    File::open(&full_path)?.read_to_string(&mut contents)?;
-
-    let content_type = match ext.map_or(None, |s| s.to_str()) {
-        // TODO handle images
-        Some("css") => ContentType::CSS,
-        // TODO load unknown files to a binary container so the default
-        // can be non-text
-        _ => ContentType::Plain,
-    };
-
-    Ok(Content(content_type, contents))
+    None
 }
 
 
