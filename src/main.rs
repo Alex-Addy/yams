@@ -6,6 +6,7 @@ extern crate comrak;
 extern crate git2;
 extern crate json;
 extern crate failure;
+extern crate chrono;
 
 mod git;
 mod conf;
@@ -19,6 +20,7 @@ use std::io;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::env;
+use std::time::{Duration, Instant};
 
 use rocket::response::{Content, Redirect};
 use rocket::http::ContentType;
@@ -40,6 +42,7 @@ fn pages(path: PathBuf, conf: State<Config>) -> Option<Content<Vec<u8>>> {
     let ext = full_path.extension().unwrap();
     let content_type = ContentType::from_extension(ext.to_str().expect("extension is not valid utf-8"))
         .unwrap_or(ContentType::Binary);
+    let start = Instant::now();
 
     // if the file exists return it directly
     if full_path.exists() && full_path.is_file() {
@@ -55,7 +58,8 @@ fn pages(path: PathBuf, conf: State<Config>) -> Option<Content<Vec<u8>>> {
             let rendered = get_md_as_html(&full_path).unwrap();
             // eww, there has to be a better way to handle this
             let title = full_path.file_stem().map_or("thread.run", |s| s.to_str().unwrap());
-            let generated = pretend_template(title, &rendered);
+
+            let generated = pretend_template(title, &rendered, start.elapsed());
             return Some(Content(ContentType::HTML, Vec::from(generated)));
         }
     }
@@ -101,7 +105,7 @@ fn get_md_as_html(path: &Path) -> io::Result<String> {
     Ok(markdown_to_html(&contents, &ComrakOptions::default()))
 }
 
-fn pretend_template(title: &str, content: &str) -> String {
+fn pretend_template(title: &str, content: &str, duration: Duration) -> String {
     // I would rather this be in a constant but format! requires a string literal?
     // TODO fix this
     format!(r#"
@@ -114,7 +118,13 @@ fn pretend_template(title: &str, content: &str) -> String {
 <body>
     {body}
 </body>
-"#, title = title, body = content)
+<!-- Page constructed in {duration}ms on {date}. -->
+</html>
+"#, title = title, body = content, duration = as_ms(&duration), date = chrono::Utc::now().to_rfc3339())
+}
+
+fn as_ms(d: &Duration) -> u64 {
+    d.as_secs() * 1000 + (d.subsec_nanos() as u64 / 1_000_000)
 }
 
 
