@@ -113,7 +113,7 @@ fn pretend_template(title: &str, content: &str, duration: Duration) -> String {
 <head>
     <title>{title}</title>
     <meta charset="UTF-8">
-    <link rel="stylesheet" type="text/css" href="/css/base.css">
+    <link rel="stylesheet" type="text/css" href="/resources/styles.css">
 </head>
 <body>
     {body}
