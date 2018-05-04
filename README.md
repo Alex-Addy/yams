@@ -15,9 +15,12 @@ features that are sort of difficult to find together on other servers.
 
 Features:
  - [x] Render Markdown to serve as html
- - [ ] Combine rendered html with provided css
+ - [x] Combine rendered html with provided css
  - [x] Serve markdown as .html and hide the original format of pages
  - [x] Fetch updated pages via git upon the reciept of a webhook
+ - [ ] Cache resources in memory
+ - [ ] Correctly work with cach headers
+ - [ ] Enable TLS for https
 
 Caddy has almost all the above features but it serves the rendered markdown
 pages as .md and not .html, making future changes in format annoying if
