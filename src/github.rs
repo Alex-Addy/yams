@@ -1,12 +1,12 @@
 
 use failure::{Error, err_msg};
 use rocket::{Data, Outcome, Request};
-use rocket::data::{FromData};
+use rocket::data::{FromDataSimple};
 use rocket::http::Status;
 use json;
 use std::io::Read;
 
-#[derive(Debug)]
+#[derive(Debug, FromForm)]
 pub struct GitHubEvent {
     pub event_type: String,
     pub delivery: String,
@@ -58,7 +58,7 @@ impl GitHubEvent {
     }
 }
 
-impl FromData for GitHubEvent {
+impl FromDataSimple for GitHubEvent {
     type Error = Error;
 
     fn from_data(request: &Request, data: Data) -> Outcome<Self, (Status, Self::Error), Data> {

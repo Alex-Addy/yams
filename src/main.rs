@@ -1,7 +1,8 @@
-#![feature(plugin)]
-#![plugin(rocket_codegen)]
+#![feature(proc_macro_hygiene, decl_macro)]
 
+#[macro_use]
 extern crate rocket;
+
 extern crate comrak;
 extern crate git2;
 extern crate json;
@@ -134,7 +135,7 @@ fn as_ms(d: &Duration) -> u64 {
 
 fn rocket() -> rocket::Rocket {
     rocket::ignite()
-        .attach(AdHoc::on_attach(|rocket| {
+        .attach(AdHoc::on_attach("Load Config", |rocket| {
             let conf = conf::Config::from_rocket_conf(rocket.config());
             match conf {
                 Ok(c) => {
