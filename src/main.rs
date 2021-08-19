@@ -1,18 +1,3 @@
-#![feature(proc_macro_hygiene, decl_macro)]
-
-#[macro_use]
-extern crate rocket;
-
-extern crate comrak;
-extern crate git2;
-extern crate json;
-extern crate failure;
-extern crate chrono;
-
-mod git;
-mod conf;
-mod github;
-
 use conf::Config;
 use github::GitHubEvent;
 
@@ -20,37 +5,32 @@ use std::fs::File;
 use std::io;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::env;
 use std::time::{Duration, Instant};
+use std::sync::Arc;
 
-use rocket::response::{Content, Redirect};
-use rocket::http::ContentType;
-use rocket::State;
-use rocket::fairing::AdHoc;
+use warp::{Filter, http::Response};
 
 //
 // Routes
 //
 
-#[get("/")]
-fn root() -> Redirect {
-    Redirect::to("/index.html")
-}
-
-#[get("/<path..>")]
-fn pages(path: PathBuf, conf: State<Config>) -> Option<Content<Vec<u8>>> {
+fn handle_page_request(conf: Arc<Config>, path: String) -> Response<impl Into<hyper::Body>> {
+    // TODO add full path checking
     let full_path = conf.site_root.join(path);
     let ext = full_path.extension().unwrap();
-    let content_type = ContentType::from_extension(ext.to_str().expect("extension is not valid utf-8"))
-        .unwrap_or(ContentType::Binary);
     let start = Instant::now();
+
+    // TODO instead of checking against paths here, do a full walk ahead of time and check against
+    // that list. Should be more secure.
 
     // if the file exists return it directly
     if full_path.exists() && full_path.is_file() {
         let mut buf = Vec::new(); // none of my files are currently large enough to worry about this
         File::open(&full_path).unwrap().read_to_end(&mut buf).unwrap();
 
-        return Some(Content(content_type, buf));
+        return Response::builder()
+            .header("application-type", "*/*") // TODO
+            .body(buf);
     }
 
     if ext == "html" {
@@ -61,16 +41,20 @@ fn pages(path: PathBuf, conf: State<Config>) -> Option<Content<Vec<u8>>> {
             let title = full_path.file_stem().map_or("thread.run", |s| s.to_str().unwrap());
 
             let generated = pretend_template(title, &rendered, start.elapsed());
-            return Some(Content(ContentType::HTML, Vec::from(generated)));
+            return Response::builder()
+                .header("application-type", "text/html")
+                .body(generated);
         }
     }
 
-    None
+    Response::builder()
+        .header("application-type", "text")
+        .status(http::StatusCode::NOT_FOUND)
+        .body("Could not find file")
 }
 
 
-#[post("/webhooks/github", format = "application/json", data = "<event>")]
-fn git_webhook(conf: State<Config>, event: GitHubEvent) {
+fn git_webhook(conf: Config, event: GitHubEvent) {
     println!("{:?}", event);
     match &*event.event_type {
         "ping" => return,
@@ -133,30 +117,25 @@ fn as_ms(d: &Duration) -> u64 {
 // Main Section
 //
 
-fn rocket() -> rocket::Rocket {
-    rocket::ignite()
-        .attach(AdHoc::on_attach("Load Config", |rocket| {
-            let conf = conf::Config::from_rocket_conf(rocket.config());
-            match conf {
-                Ok(c) => {
-                    println!("Extracted config: {:?}", c);
-                    Ok(rocket.manage(c))
-                },
-                Err(e) => {
-                    println!("Error extracing config: {:?}", e);
-                    Err(rocket)
-                },
-            }
-        }))
-        .mount("/", routes![root, pages, git_webhook])
-}
+#[tokio::main]
+async fn main() {
+    // put config into an "any" route to be combined with other routes via "and"
+    let config = Config::from_file(std::env::args());
+    let config = warp::any().map(move || Arc::new(config));
 
-fn main() {
-    let args: Vec<String> = env::args().collect();
-    if args.len() != 1 {
-        println!("Usage: {}", args[0]);
-        drop(args);
-        std::process::exit(1);
-    }
-    rocket().launch();
+    // GET /
+    let root_redirect = 
+        warp::path::end().map(|| warp::redirect(warp::http::Uri::from_static("/index.html")));
+
+    // GET /path...
+    let pages = warp::any().and(config.clone()).and(warp::path::param::<String>()).map(handle_page_request);
+    
+    // POST /webhooks/github
+    // TODO add restriction for application/json
+    let github_route = warp::path::path("/webhooks/github").and(config.clone()).and(warp::body::content_length_limit(1024 * 16)).and(warp::body::json()).map(git_webhook);
+
+    // restrict routes to their expected methods and combine them
+    let routes = warp::get().and(root_redirect.or(pages)).or(warp::post().and(github_route));
+
+    warp::serve(routes).run(([127, 0, 0, 1], 3030)).await
 }
